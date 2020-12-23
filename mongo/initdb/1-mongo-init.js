@@ -1,0 +1,3 @@
+/* global rs */
+
+rs.initiate();

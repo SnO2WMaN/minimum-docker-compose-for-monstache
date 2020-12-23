@@ -1,0 +1,86 @@
+version: '3.8'
+
+services:
+  mongo:
+    container_name: mongo
+    hostname: mongo
+    image: mongo:4
+    command: mongod --config /etc/mongoc.conf
+    ports:
+      - 27017:27017
+    volumes:
+      - $PWD/mongo/config/replset.conf:/etc/mongoc.conf
+      - $PWD/mongo/initdb:/docker-entrypoint-initdb.d
+    networks:
+      - test
+    healthcheck:
+      test: exit $$((1&~$$(echo 'db.runCommand("ping").ok' | mongo --quiet)))
+      interval: 2s
+      timeout: 60s
+      retries: 300
+
+  elasticsearch:
+    container_name: elasticsearch
+    hostname: elasticsearch
+    image: docker.elastic.co/elasticsearch/elasticsearch-oss:7.9.3
+    environment:
+      discovery.type: single-node
+      ES_JAVA_OPTS: -Xms512m -Xmx512m
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    volumes:
+      - elastic:/usr/share/elasticsearch/data
+    ports:
+      - 9200:9200
+    networks:
+      - test
+    healthcheck:
+      test: "curl --fail http://localhost:9200 || exit 1"
+      interval: 2s
+      timeout: 60s
+      retries: 300
+
+  kibana:
+    container_name: kibana
+    image: docker.elastic.co/kibana/kibana-oss:7.9.3
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    links:
+      - elasticsearch:elasticsearch
+    ports:
+      - 5601:5601
+    networks:
+      - test
+
+  monstache:
+    container_name: monstache
+    image: rwynn/monstache
+    working_dir: /app
+    command: -f /etc/monstache.toml
+    depends_on:
+      mongo:
+        condition: service_healthy
+      elasticsearch:
+        condition: service_healthy
+    volumes:
+      - $PWD/monstache/config.toml:/etc/monstache.toml
+    networks:
+      - test
+    healthcheck:
+      test: "wget -q -O - http://localhost:8080/healthz"
+      interval: 10s
+      timeout: 10s
+      retries: 300
+
+volumes:
+  mongo:
+    driver: local
+  elastic:
+    driver: local
+
+networks:
+  test:
+    driver: bridge
